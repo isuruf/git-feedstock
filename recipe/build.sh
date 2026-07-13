@@ -19,6 +19,19 @@ if [[ -n "${CARGO_BUILD_TARGET:-}" ]]; then
   RUST_MAKE_ARGS=(RUST_TARGET_DIR="target/${CARGO_BUILD_TARGET}/release")
 fi
 
+# On Linux, git's build system hardcodes CSPRNG_METHOD=getrandom
+# (config.mak.uname), which compiles the getrandom() code path, pulls in
+# <sys/random.h> and hard-requires glibc >= 2.25 at both build and run time.
+# That is what forced c_stdlib_version up to 2.28. Override it so the package
+# stays buildable/installable against older glibc (e.g. 2.17 / CentOS 7).
+# OpenSSL is already a host dependency, so use its CSPRNG rather than relying on
+# /dev/urandom being present at run time (set CSPRNG_METHOD=urandom for that
+# zero-dependency fallback instead). macOS keeps its arc4random default.
+CSPRNG_MAKE_ARGS=()
+if [[ "$target_platform" == linux-* ]]; then
+  CSPRNG_MAKE_ARGS=(CSPRNG_METHOD=openssl)
+fi
+
 pushd code
 
 # Add a place for git config files.
@@ -37,6 +50,7 @@ make \
     NO_INSTALL_HARDLINKS=1 \
     STRIP=$STRIP \
     "${RUST_MAKE_ARGS[@]}" \
+    "${CSPRNG_MAKE_ARGS[@]}" \
     all strip install
 
 # build osxkeychain
